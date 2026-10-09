@@ -1,92 +1,91 @@
-# Project 4: FPGA FMCW Sonar
+# Project 4: FPGA FMCW Sonar with Triangular Array
 
-University of Cape Town — Masters FPGA Course  
-Author: Akhona Hlanjwa (HLNAKH003)
+**Author:** Akhona Hlanjwa (HLNAKH003) 
+**Platform:** Terasic DE10-Lite, Intel MAX 10 FPGA  
+**Software:** Quartus Prime Lite 25.1std
 
 ## Project status
 
-This submission demonstrates two separately tested FPGA designs:
+This submission demonstrates FPGA ADC acquisition, fixed-point mixing and FIR filtering, and an integrated ADC-to-DSP hardware data path.
 
-1. Two-channel ADC acquisition using the Sonar v1.0 board.
-2. A digital synthetic-echo test of an FMCW reference, mixer and FIR filter.
+The acoustic transmitter, working triangular microphone array, target range measurement, and direction estimation were not demonstrated. Microphone availability and an unresolved microphone bias problem limited acoustic testing.
 
-The ADC and DSP designs have not been integrated into a complete acoustic sonar system. Acoustic range and direction-of-arrival measurements were not demonstrated. The microphones provided were not the correct ones for this project.
+## Implemented designs
 
-## Hardware and software
+### 1. SONAR_ADC_TEST
 
-- Terasic DE10-Lite FPGA board
-- MAX 10 device: 10M50DAF484C7G
-- Sonar v1.0 board with MAX11059 ADCs
-- Quartus Prime Lite 25.1
-- 50 MHz FPGA clock
-- USB-Blaster JTAG interface
+- Interfaces with the Sonar v1.0 board's U2 MAX11059 ADC.
+- Captures 256 sample pairs from U2 channels 0 and 1.
+- Uses a nominal sampling rate of 10 ksample/s per channel.
+- Stores raw 14-bit ADC data for JTAG export.
+- Includes conversion timeout and sampling-period overrun detection.
 
-## Repository packages
+### 2. SONAR_DSP_TEST
 
-- SONAR_ADC_TEST.zip: two-channel ADC acquisition project.
-- The DSP ZIP: verified synthetic-echo DSP project.
+- Uses a stored reference with a triangular frequency sweep from 1 to 3 kHz.
+- Generates a synthetic echo using a circular delay of 16 samples.
+- Implements fixed-point multiplication and a 63-tap FIR low-pass filter with a nominal 600 Hz cutoff.
+- Exports 256 mixed and filtered sample pairs.
 
-Extract each package into a separate folder before opening its Quartus project. Both projects retain the project filename LED_BLINK.qpf.
+All 512 exported hardware values matched the independent integer reference model exactly.
 
-## ADC acquisition
+The synthetic delay is a digital test stimulus; it is not a measured acoustic target delay.
 
-The FPGA captures 256 sample pairs from U2 channels 0 and 1 at a nominal 10 ksample/s per channel.
+### 3. SONAR_ADC_DSP_INTEGRATED
 
-The controller starts conversions, monitors EOC and reads all eight U2 channel words, retaining the first two. U3 is not read. Samples are exported through JTAG using export_sonar_capture.tcl.
+The integrated design processes U2 channel 0 through:
 
-These captures demonstrate acquisition and export. They do not establish calibrated analogue accuracy or a verified microphone response.
+ADC acquisition → offset-binary conversion → reference mixing → FIR filtering → stored results → JTAG CSV export.
 
-## DSP implementation
+It captures 256 raw ADC samples and 256 corresponding filtered samples. All 256 exported filtered values matched the integer reference model calculated from the captured raw ADC data, with zero mismatches.
 
-The digital self-test uses:
+This verifies the implemented digital processing path. It does not establish microphone performance or acoustic ranging accuracy.
 
-- A 256-sample reference with frequency swept from 1 to 3 kHz and back.
-- A synthetic echo formed by a circular delay of 16 samples.
-- A signed fixed-point multiplier for mixing.
-- A 63-tap FIR low-pass filter with a 600 Hz design cutoff.
-- Storage of 256 mixer and 256 filtered output samples.
-- JTAG export using export_sonar_dsp.tcl.
+## Hardware results
 
-The synthetic delay is a test input, not a measured acoustic delay.
+- Synthetic DSP compilation: 0 errors.
+- Integrated ADC/DSP compilation: 0 errors.
+- FPGA programming completed successfully.
+- Integrated capture completed with 256 samples and no reported capture error.
+- Integrated raw ADC values ranged from 6238 to 9193.
+- Integrated filtered values ranged from −312 to 219.
 
-## Verified DSP results
+CSV timestamps are nominal values calculated from the 50 MHz clock and 5000-cycle sampling period.
 
-The FPGA-exported CSV was compared with the expected integer model:
+## Repository contents
 
-| Check | Result |
-|---|---|
-| Mixer samples | 256 of 256 match exactly |
-| FIR samples | 256 of 256 match exactly |
-| Maximum numerical error | 0 |
-| CLOCK_50 setup slack | +3.899 ns |
-| CLOCK_50 hold slack | +0.150 ns |
-| Total negative slack | 0 ns |
-| Logic elements | 12,282 / 49,760 (25%) |
-| Registers | 9,135 / 51,509 (18%) |
-| Embedded 9-bit multiplier elements | 4 / 288 |
-| M9K blocks | 0 / 182 |
+- ADC acquisition project archive.
+- Verified synthetic DSP project archive.
+- Integrated ADC/DSP project archive.
+- Exported integrated hardware capture CSV.
+- Source code, project settings, and verification scripts within the project archives.
 
-Timing figures apply to the analysed paths in the DSP design. Sample times in CSV files assume the nominal 50 MHz clock.
+The integrated archive contains a `project` folder and a `verification` folder. Open `project/LED_BLINK.qpf` in Quartus. The project retains the name `LED_BLINK` from the initial board test.
 
-## Running the DSP test
+## Reproducing the integrated test
 
-1. Extract the DSP package and open LED_BLINK/LED_BLINK.qpf.
-2. Confirm that the top-level entity is SONAR_DSP_TEST.
-3. Compile and program output_files/LED_BLINK.sof.
-4. Open In-System Sources and Probes Editor and scan the chain.
-5. Select CTRL, with source width 10 and probe width 32.
-6. Write source 0, then source 1 to start a capture.
-7. Wait one second and read the probe.
-8. Run export_sonar_dsp.tcl through Tools → Tcl Scripts.
+1. Extract the integrated project archive.
+2. Open `project/LED_BLINK.qpf`.
+3. Compile and program the resulting SOF.
+4. Open the In-System Sources and Probes Editor and select the CTRL instance.
+5. Write source value 0, then 1, to trigger a capture.
+6. Read the probe and confirm count 256, idle state, done asserted, and no error.
+7. Run `export_sonar_integrated.tcl` using `quartus_stp` to export the stored results.
+8. Run `verify_integrated.py` against the exported CSV using the supplied verification files.
 
-The exported CSV contains sample_index, time_us, mixed_signed and filtered_signed.
+The source width is 10 bits and the probe width is 32 bits. Source bit 0 triggers capture on a rising edge; bit 9 selects the result bank; bits 8:1 select the sample index.
 
-testbench.v is for simulation only; do not add it to the Quartus synthesis project.
+## Limitations
 
-## Hardware limitations
+- The specified microphones could not be obtained.
+- One substitute microphone was attached at MK1, but its measured positive-terminal voltage was 0 V. The cause remained unresolved.
+- No repeatable acoustic microphone response was verified.
+- No acoustic chirp transmission, physical target range, or direction-of-arrival result is claimed.
+- ADC results are raw and uncalibrated.
+- Instrument calibration uncertainty limits interpretation of analog measurements.
+- Positive reported internal timing slack does not establish complete timing verification of the external ADC interface.
+- Sample storage used FPGA logic resources rather than external SDRAM.
 
-The intended microphones were unavailable. A substitute microphone was installed at MK1, but a working acoustic response was not established. Its measured bias was approximately 0 V during troubleshooting; the cause remains unresolved.
+## Future work
 
-Consequently, the physical triangular microphone array, acoustic transmitter operation, range estimation and angle extraction remain incomplete.
-
-Future work includes resolving microphone compatibility and bias, integrating ADC acquisition with DSP, implementing the transmitter and array processing, and testing against known acoustic targets.
+Resolve microphone bias and compatibility, complete the triangular array and acoustic transmitter, synchronize transmission with acquisition, and implement beat-frequency and direction estimation. Validate results against known target distances and angles, then optimize memory use and complete external interface timing constraints.
